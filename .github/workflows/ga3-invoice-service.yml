@@ -1,8 +1,5 @@
 name: TDS Q2 invoice service
 on:
-  push:
-    branches: [codex/ga3-solutions]
-    paths: [assignment/**, .github/workflows/ga3-invoice-service.yml]
   workflow_dispatch:
 
 permissions:

@@ -18,12 +18,24 @@ Return {"diagnosis":{"rootCause":<one allowedRootCauses value>,"evidence":[2 to 
 "effect":{"toolName":...,"arguments":{...},"evidence":[...]}}.
 Select the MINIMUM necessary diagnostic calls (1–3), respecting maximumDiagnostics, and one justified effect from policy.effectTools.
 Evidence must use identifiers without display brackets: ev_1, never [ev_1].
+Copy the COMPLETE evidence ID including its ev_ prefix. Never shorten an identifier.
 Do not add query_logs just because query_metrics is selected: include a second diagnostic only when distinct evidence requires it.
 Use the provided toolCatalog inputSchema exactly. Use exact targets/values from incident evidence. Each diagnostic must cite
 at least one ID in diagnosis.evidence. Independent diagnostics will be dispatched together. The effect runs only after all
 diagnostics succeed and after approval where required. If already at the permitted scaling limit, PAGE THE OWNER rather than
 scaling. Never scale beyond policy. Exclude irrelevant archive examples, hypothetical causes, old deployments and decoy action
 words. Do not emit sensitive information in arguments or evidence. No tool has been executed yet: return a plan only."""
+PROMPT += """\nA mandatory recovery runbook is a prerequisite: include read_runbook even when its repository is unavailable;
+an unavailable required diagnostic must suppress the effect later. Follow the current runbook's stated response:
+if it requires a linked incident, select open_incident rather than substituting page_owner.
+Confirm flag recursion with bounded query_logs rather than inspecting an unrelated unchanged deployment.
+Do not inspect a deployment just to reconfirm an authoritative statement that no release changed.
+Use severity SEV-1 when the current evidence explicitly requires a severity-one incident."""
+
+
+def compact_transcript(text):
+    # Remove a repeated editorial suffix, preserving every evidence ID, timestamp and factual sentence.
+    return re.sub(r" Correlation corr_[A-Za-z0-9]+ was checked against [^\s;]+; retain this full sentence so the agent must rank evidence rather than match a short keyword\.", "", text)
 
 
 def ident():
@@ -93,7 +105,7 @@ def response(state, dispatches=None, approvals=None):
 def finish(state, failed=False):
     end = str(time.time_ns())
     for s in state["spans"]:
-        if s["kind"] != 3 or not any(a.get("clientSpan") == s["spanId"] for a in state["actions"]):
+        if s["kind"] != 3:
             s["endTimeUnixNano"] = end
     state["terminal"] = {"runId": state["runId"], "status": "failed" if failed else "completed", "diagnosis": state["diagnosis"],
         "chosenEffect": state["effect"]["toolName"], "suppressed": state["suppressed"], "actionLog": state["actionLog"], "receiptLog": state["receiptLog"],
@@ -125,8 +137,8 @@ def create(body, headers):
             require(state["inputDigest"] == digest(body), 409, "Run conflict")
             return state.get("terminal") or state["lastResponse"]
         started = str(time.time_ns())
-        model_input = {"incident": incident, "policy": policy, "toolCatalog": catalog}
-        emit("incident_input", model_input)
+        emit("incident_input", {"incident": incident, "policy": policy, "toolCatalog": catalog})
+        model_input = {"incident": {**incident, "transcript": compact_transcript(incident["transcript"])}, "policy": policy, "toolCatalog": catalog}
         with inference_window(db):
             plan, model = infer(PROMPT, model_input, timeout=16)
         diag, diagnostics, effect = plan.get("diagnosis"), plan.get("diagnostics"), plan.get("effect")

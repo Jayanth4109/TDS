@@ -133,7 +133,18 @@ def evidence_ids(values, available):
     """Resolve optional display brackets only against exact existing identifiers."""
     if not isinstance(values, list):
         return values
-    return [v[1:-1] if isinstance(v, str) and v not in available and v.startswith("[") and v.endswith("]") and v[1:-1] in available else v for v in values]
+    resolved = []
+    for value in values:
+        if isinstance(value, str):
+            candidate = value[1:-1] if value.startswith("[") and value.endswith("]") else value
+            if value in available:
+                pass
+            elif candidate in available:
+                value = candidate
+            elif "ev_"+candidate in available:
+                value = "ev_"+candidate
+        resolved.append(value)
+    return resolved
 
 
 @contextlib.contextmanager

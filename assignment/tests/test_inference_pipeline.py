@@ -111,6 +111,18 @@ def test_display_brackets_resolve_only_to_known_ids():
     assert common.evidence_ids(['[ev_1]','ev_2','[unknown]'], {'ev_1','ev_2'}) == ['ev_1','ev_2','[unknown]']
 
 
+def test_missing_evidence_prefix_resolves_only_exact_existing_id():
+    assert common.evidence_ids(['Opaque123','[Opaque456]','unknown'],{'ev_Opaque123','ev_Opaque456'}) == ['ev_Opaque123','ev_Opaque456','unknown']
+    assert common.evidence_ids(['Opaque123'],{'Opaque123','ev_Opaque123'}) == ['Opaque123']
+
+
+def test_transcript_compaction_preserves_evidence_and_facts():
+    from agents.incident import compact_transcript
+    source='[ev_A] 2026-05-18T03:00:00Z A routine backup completed. Correlation corr_ABC123 was checked against svc_example; retain this full sentence so the agent must rank evidence rather than match a short keyword.\n[ev_B] Actual CPU saturation is 99 percent.'
+    compact=compact_transcript(source)
+    assert compact=='[ev_A] 2026-05-18T03:00:00Z A routine backup completed.\n[ev_B] Actual CPU saturation is 99 percent.'
+
+
 def test_rationale_cites_only_model_selected_source_references():
     import test_invoice
     proposal=test_invoice.decision()['decisions'][0]
