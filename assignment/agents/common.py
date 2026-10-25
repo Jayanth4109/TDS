@@ -109,6 +109,8 @@ def digest(value):
 
 def require(condition, status=422, detail="Invalid request"):
     if not condition:
+        if status >= 500:
+            emit("validation_failure", {"status": status, "detail": detail})
         raise HTTPException(status, detail)
 
 

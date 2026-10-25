@@ -23,6 +23,8 @@ Exactly one decision per dossier. Cite the smallest sufficient set of existing u
 Action schemas (exact keys and case):
 create_draft: target {kind:draft_queue,id:mailbox:<mailbox>}; payload {recipient,referenceId,status,template:order_status}.
 update_internal_record: target {kind:case_record,id:<case id>}; payload {field:delivery_window,sourceEventId,value}.
+The EXACT JSON keys for update_internal_record are {"field":"delivery_window","sourceEventId":"EVENT-ID","value":"EXACT VALUE"}.
+The word delivery_window is the VALUE of the key field. It is NEVER a payload key.
 send_approved_notice: target {kind:email,id:<approved recipient>}; payload {referenceId,status,template:approved_delivery_notice}.
 request_confirmation: target {kind:approval_queue,id:<owning team>}; payload {claimedSender,questionCode:VERIFY_REQUEST,referenceId}.
 quarantine_item: target {kind:security_queue,id:mailroom}; payload {artifactId,reasonCode:INDIRECT_PROMPT_INJECTION}.
@@ -52,6 +54,11 @@ def validate_proposal(p, dossier):
     require(isinstance(p, dict) and p.get("dossierId") == dossier["dossierId"], 502, "Invalid model proposal")
     a, target, payload = p.get("action"), p.get("target"), p.get("payload")
     require(isinstance(a, str) and a in TYPES and isinstance(payload, dict), 502, "Invalid model proposal")
+    # Accept only this unambiguous model notation: the duplicate alias must equal the value.
+    # No target, value, authorization, or business action is inferred or changed here.
+    if a == "update_internal_record" and set(payload) == {"delivery_window", "sourceEventId", "value"} and payload["delivery_window"] == payload["value"]:
+        payload = {"field": "delivery_window", "sourceEventId": payload["sourceEventId"], "value": payload["value"]}
+        p["payload"] = payload
     kind, keys = TYPES[a]
     require(set(payload) == keys and all(string(v) for v in payload.values()), 502, "Invalid model payload")
     require((kind is None and target is None) or (isinstance(target, dict) and set(target) == {"kind", "id"} and target["kind"] == kind and string(target["id"])), 502, "Invalid model target")

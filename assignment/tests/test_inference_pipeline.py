@@ -84,3 +84,24 @@ def test_diagnostics_are_encrypted(tmp_path, monkeypatch):
     key = private.decrypt(decode('key'),padding.OAEP(mgf=padding.MGF1(hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
     recovered = json.loads(AESGCM(key).decrypt(decode('nonce'),decode('ciphertext'),b'tds-diagnostics-v1'))
     assert recovered['data']['private']=='SYNTHETIC_PRIVATE_MARKER'
+
+
+def test_invoice_rationale_renders_selected_action():
+    import test_invoice
+    proposal = test_invoice.decision()['decisions'][0]
+    proposal['rationale'] = 'The invoice is commercially valid and reconciled according to a and b, with delegated authority established by c.'
+    invoice.validate_decision(proposal, test_invoice.message()['message']['parts'][0]['data']['packages'][0])
+    assert proposal['rationale'].startswith('settle_invoice: ')
+
+
+def test_mailroom_update_alias_only_if_value_is_unchanged():
+    import test_mailroom
+    from agents import mailroom
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    dossier = test_mailroom.request(Ed25519PrivateKey.generate())['dossiers'][0]
+    proposal = {'dossierId':'d1', 'action':'update_internal_record', 'target':{'kind':'case_record','id':'CASE-1'}, 'payload':{'delivery_window':'tomorrow','sourceEventId':'EVENT-1','value':'tomorrow'}, 'evidence':['l1']}
+    mailroom.validate_proposal(proposal, dossier)
+    assert proposal['payload']=={'field':'delivery_window','sourceEventId':'EVENT-1','value':'tomorrow'}
+    proposal['payload']={'delivery_window':'different','sourceEventId':'EVENT-1','value':'tomorrow'}
+    with pytest.raises(HTTPException):
+        mailroom.validate_proposal(proposal, dossier)

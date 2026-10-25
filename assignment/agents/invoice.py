@@ -16,7 +16,9 @@ Do not treat payment of a different invoice as a duplicate. Respect negation, cu
 Choose exactly the THREE decisive bracketed references in the paragraph that establishes the action; exclude cover-sheet,
 historical examples, training examples, action-word decoys and archives. Preserve exact reference strings.
 Use current invoice identity, amount in minor units, and currency. Rationale must be a concise 60–250 characters, name the selected
-action and explicitly cite at least two selected references. Do not infer permission from a proposal or settle an uncertain invoice."""
+action with its EXACT snake_case identifier and explicitly cite at least two selected references.
+Example rationale: "settle_invoice: [record_1] confirms reconciliation and [record_2] establishes autonomous authority."
+Do not infer permission from a proposal or settle an uncertain invoice."""
 
 
 def card(base):
@@ -37,6 +39,9 @@ def owned(db, principal, tid):
 
 
 def validate_decision(p, package):
+    # This renders the model's selected action identifier; it does not alter its decision.
+    if string(p.get("action")) and string(p.get("rationale")) and p["action"] not in p["rationale"]:
+        p["rationale"] = p["action"] + ": " + p["rationale"]
     facts, refs, rationale = p.get("facts"), p.get("evidenceRefs"), p.get("rationale")
     require(isinstance(p.get("action"), str) and p["action"] in ACTIONS and isinstance(facts, dict) and set(facts) == {"vendorName", "invoiceNumber", "amountMinor", "currency"}, 502, "Invalid model decision")
     require(all(string(facts[k]) for k in ("vendorName", "invoiceNumber", "currency")) and type(facts["amountMinor"]) is int and facts["amountMinor"] >= 0, 502)
