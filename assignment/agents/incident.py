@@ -30,7 +30,10 @@ an unavailable required diagnostic must suppress the effect later. Follow the cu
 if it requires a linked incident, select open_incident rather than substituting page_owner.
 Confirm flag recursion with bounded query_logs rather than inspecting an unrelated unchanged deployment.
 Do not inspect a deployment just to reconfirm an authoritative statement that no release changed.
-Use severity SEV-1 when the current evidence explicitly requires a severity-one incident."""
+Use severity SEV-1 when the current evidence explicitly requires a severity-one incident.
+Follow an explicit current approved recovery target: if the evidence states that a bounded replica target
+clears the queue by adding independent pools, choose scale_service at that exact target instead of generic
+escalation advice. This never permits exceeding a stated maximum; at the maximum, page the owner."""
 
 
 def compact_transcript(text):
