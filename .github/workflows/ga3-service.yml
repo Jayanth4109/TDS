@@ -26,7 +26,7 @@ jobs:
         run: |
           python -m pip install -r requirements.txt 'pytest>=8,<9'
           python -m pytest tests -q
-      - name: Serve for up to four hours
+      - name: Start temporary service
         working-directory: assignment
         env:
           LLM_CHAT_URL: https://text.pollinations.ai/openai
@@ -46,7 +46,7 @@ jobs:
           app_pid=$!
           /tmp/cloudflared tunnel --url http://127.0.0.1:8000 --protocol http2 --no-autoupdate > /tmp/tds-tunnel.log 2>&1 &
           tunnel_pid=$!
-          trap 'kill "$app_pid" "$tunnel_pid" 2>/dev/null || true' EXIT
+          trap 'kill "$app_pid" "$tunnel_pid" 2>/dev/null || true' ERR
           for attempt in $(seq 1 60); do
             public_url=$(sed -nE 's/.*(https:\/\/[a-z0-9-]+\.trycloudflare\.com).*/\1/p' /tmp/tds-tunnel.log | head -n 1)
             if [ -n "$public_url" ]; then
@@ -69,6 +69,15 @@ jobs:
             echo "Q3: $public_url/v1/mailroom/actions"
             echo "Q4: $public_url"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish temporary URL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: temporary-submission-url
+          path: /tmp/tds-public-url.txt
+          retention-days: 1
+      - name: Keep service alive for up to four hours
+        working-directory: assignment
+        run: |
           python -u - <<'PY'
           import os,time,urllib.request
           end=time.monotonic()+4*60*60
