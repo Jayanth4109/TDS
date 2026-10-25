@@ -22,6 +22,8 @@ for name, factory, route, headers in [
     ('mailroom', mail, '/v1/mailroom/actions', {}),
     ('incident', large_incident, '/v2/incidents', {}),
 ]:
+    if os.getenv('GA3_LOAD_TARGETS') and name not in os.environ['GA3_LOAD_TARGETS'].split(','):
+        continue
     generated = factory(namespace+'-'+name)
     body = generated[0] if isinstance(generated, tuple) else generated
     started = time.monotonic()

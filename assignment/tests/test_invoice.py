@@ -35,6 +35,7 @@ def test_task_lifecycle_isolation_replay(client, monkeypatch, accepted):
     body = message()
     first = client.post("/a2a/message:send", json=body, headers=HEADERS)
     assert first.status_code == 200, first.text
+    assert first.headers['content-type'] == 'application/a2a+json'
     task = first.json()["task"]
     assert task["status"]["state"] == "TASK_STATE_INPUT_REQUIRED" and task["history"] == [body["message"]]
     tid = task["id"]
@@ -47,6 +48,7 @@ def test_task_lifecycle_isolation_replay(client, monkeypatch, accepted):
     assert client.post("/a2a/message:send", json=changed, headers=HEADERS).status_code == 409
     final = client.post("/a2a/message:send", json=result, headers=HEADERS)
     assert final.status_code == 200, final.text
+    assert final.headers['content-type'] == 'application/a2a+json'
     final_task = final.json()["task"]
     assert final_task["status"]["state"] == "TASK_STATE_COMPLETED"
     executions = final_task["artifacts"][1]["parts"][0]["data"]["executions"]
@@ -62,6 +64,16 @@ def test_task_lifecycle_isolation_replay(client, monkeypatch, accepted):
     body["message"]["parts"][0]["data"]["policyRevision"] = "changed"
     conflict = client.post("/a2a/message:send", json=body, headers=HEADERS)
     assert conflict.status_code == 409 and "IDEMPOTENCY_CONFLICT" in conflict.text
+
+
+def test_successful_task_reads_lists_and_cancellation_use_a2a_media_type(client, monkeypatch):
+    monkeypatch.setattr(invoice,'infer',lambda *a,**kw:(decision(),'fixture'))
+    response=client.post('/a2a/message:send',json=message(),headers=HEADERS)
+    assert response.status_code==200
+    tid=response.json()['task']['id']
+    for response in [client.get('/a2a/tasks',headers=HEADERS),client.get('/a2a/tasks/'+tid,headers=HEADERS),client.post('/a2a/tasks/'+tid+':cancel',headers=HEADERS)]:
+        assert response.status_code==200
+        assert response.headers['content-type']=='application/a2a+json'
 
 
 def test_concurrent_duplicates_and_cancel_race(client, monkeypatch):

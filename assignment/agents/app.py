@@ -18,6 +18,10 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "H
 MAX_REQUEST = 4 * 1024 * 1024
 
 
+class A2AJSONResponse(JSONResponse):
+    media_type = "application/a2a+json"
+
+
 @app.middleware("http")
 async def bounds(request, call_next):
     try:
@@ -99,22 +103,22 @@ def agent_card(request: Request):
     return invoice.card(base)
 
 
-@app.post("/a2a/message:send")
+@app.post("/a2a/message:send", response_class=A2AJSONResponse)
 def invoice_send(body: dict, owner=Depends(principal)):
     return invoice.send(owner, body)
 
 
-@app.get("/a2a/tasks")
+@app.get("/a2a/tasks", response_class=A2AJSONResponse)
 def invoice_list(owner=Depends(principal)):
     return invoice.listing(owner)
 
 
-@app.get("/a2a/tasks/{tid}")
+@app.get("/a2a/tasks/{tid}", response_class=A2AJSONResponse)
 def invoice_read(tid: str, owner=Depends(principal)):
     return invoice.read(owner, tid)
 
 
-@app.post("/a2a/tasks/{tid}:cancel")
+@app.post("/a2a/tasks/{tid}:cancel", response_class=A2AJSONResponse)
 def invoice_cancel(tid: str, owner=Depends(principal)):
     return invoice.cancel(owner, tid)
 

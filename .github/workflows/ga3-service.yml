@@ -1,8 +1,5 @@
 name: TDS GA3 temporary service
 on:
-  push:
-    branches: [codex/ga3-solutions]
-    paths: [assignment/**, .github/workflows/ga3-service.yml]
   workflow_dispatch:
 
 permissions:
