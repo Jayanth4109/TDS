@@ -105,3 +105,21 @@ def test_mailroom_update_alias_only_if_value_is_unchanged():
     proposal['payload']={'delivery_window':'different','sourceEventId':'EVENT-1','value':'tomorrow'}
     with pytest.raises(HTTPException):
         mailroom.validate_proposal(proposal, dossier)
+
+
+def test_display_brackets_resolve_only_to_known_ids():
+    assert common.evidence_ids(['[ev_1]','ev_2','[unknown]'], {'ev_1','ev_2'}) == ['ev_1','ev_2','[unknown]']
+
+
+def test_incident_bracketed_evidence_preserves_exact_ids(client, monkeypatch):
+    import test_incident
+    from agents import incident
+    plan = test_incident.plan()
+    plan['diagnosis']['evidence']=['[ev_1]','[ev_2]']
+    plan['diagnostics'][0]['evidence']=['[ev_1]']
+    plan['effect']['evidence']=['[ev_2]']
+    monkeypatch.setattr(incident,'infer',lambda *a,**kw:(plan,'fixture'))
+    response=client.post('/v2/incidents',json=test_incident.request())
+    assert response.status_code==200
+    assert response.json()['diagnosis']['evidence']==['ev_1','ev_2']
+    assert response.json()['dispatches'][0]['evidence']==['ev_1']

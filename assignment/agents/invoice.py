@@ -1,7 +1,8 @@
 """Durable, principal-scoped A2A invoice Tasks."""
 import uuid
+import re
 
-from .common import canonical, digest, get, infer, infer_decisions, inference_window, serialized, put, require, string, transaction, unique
+from .common import canonical, digest, evidence_ids, get, infer, infer_decisions, inference_window, serialized, put, require, string, transaction, unique
 from .diagnostics import emit
 
 PREFIX = "application/vnd.ga5.invoice-"
@@ -43,6 +44,8 @@ def validate_decision(p, package):
     if string(p.get("action")) and string(p.get("rationale")) and p["action"] not in p["rationale"]:
         p["rationale"] = p["action"] + ": " + p["rationale"]
     facts, refs, rationale = p.get("facts"), p.get("evidenceRefs"), p.get("rationale")
+    refs = evidence_ids(refs, set(re.findall(r"\[([^\]\r\n]+)\]", canonical(package))))
+    p["evidenceRefs"] = refs
     require(isinstance(p.get("action"), str) and p["action"] in ACTIONS and isinstance(facts, dict) and set(facts) == {"vendorName", "invoiceNumber", "amountMinor", "currency"}, 502, "Invalid model decision")
     require(all(string(facts[k]) for k in ("vendorName", "invoiceNumber", "currency")) and type(facts["amountMinor"]) is int and facts["amountMinor"] >= 0, 502)
     require(isinstance(refs, list) and len(refs) == 3 and all(string(r) for r in refs) and unique(refs), 502)

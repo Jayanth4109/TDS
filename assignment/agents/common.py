@@ -122,6 +122,13 @@ def unique(items):
     return len(items) == len(set(items))
 
 
+def evidence_ids(values, available):
+    """Resolve optional display brackets only against exact existing identifiers."""
+    if not isinstance(values, list):
+        return values
+    return [v[1:-1] if isinstance(v, str) and v not in available and v.startswith("[") and v.endswith("]") and v[1:-1] in available else v for v in values]
+
+
 @contextlib.contextmanager
 def transaction():
     path = Path(os.getenv("STATE_DB", "data/state.sqlite3"))

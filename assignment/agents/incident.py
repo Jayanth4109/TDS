@@ -8,7 +8,7 @@ import uuid
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError, ValidationError
 
-from .common import canonical, digest, get, infer, inference_window, serialized, put, require, string, transaction, unique
+from .common import canonical, digest, evidence_ids, get, infer, inference_window, serialized, put, require, string, transaction, unique
 from .diagnostics import emit
 
 PROFILE = "ga5-incident-agent/v2"
@@ -17,6 +17,7 @@ Return {"diagnosis":{"rootCause":<one allowedRootCauses value>,"evidence":[2 to 
 "diagnostics":[{"toolName":...,"arguments":{...},"evidence":[...]}],
 "effect":{"toolName":...,"arguments":{...},"evidence":[...]}}.
 Select the MINIMUM necessary diagnostic calls (1–3), respecting maximumDiagnostics, and one justified effect from policy.effectTools.
+Evidence must use identifiers without display brackets: ev_1, never [ev_1].
 Do not add query_logs just because query_metrics is selected: include a second diagnostic only when distinct evidence requires it.
 Use the provided toolCatalog inputSchema exactly. Use exact targets/values from incident evidence. Each diagnostic must cite
 at least one ID in diagnosis.evidence. Independent diagnostics will be dispatched together. The effect runs only after all
@@ -76,7 +77,8 @@ def dispatch(state, action):
 def validate_tool(plan, catalog, evidence, *, require_evidence=True):
     require(isinstance(plan, dict) and set(plan) == {"toolName", "arguments", "evidence"}, 502, "Invalid model tool plan")
     require(string(plan["toolName"]) and plan["toolName"] in catalog and isinstance(plan["arguments"], dict), 502)
-    refs = plan["evidence"]
+    refs = evidence_ids(plan["evidence"], evidence)
+    plan["evidence"] = refs
     require(isinstance(refs, list) and (bool(refs) or not require_evidence) and all(string(x) for x in refs) and unique(refs) and set(refs) <= evidence, 502, "Invalid model evidence")
     try:
         Draft202012Validator(catalog[plan["toolName"]]["inputSchema"]).validate(plan["arguments"])
@@ -129,8 +131,9 @@ def create(body, headers):
             plan, model = infer(PROMPT, model_input, timeout=16)
         diag, diagnostics, effect = plan.get("diagnosis"), plan.get("diagnostics"), plan.get("effect")
         require(isinstance(diag, dict) and diag.get("rootCause") in incident["allowedRootCauses"], 502, "Invalid model diagnosis")
-        evidence = diag.get("evidence")
         ids = set(re.findall(r"^\s*\[([^\]\r\n]+)\]", incident["transcript"], re.M))
+        evidence = evidence_ids(diag.get("evidence"), ids)
+        diag["evidence"] = evidence
         require(isinstance(evidence, list) and 2 <= len(evidence) <= 4 and all(string(x) for x in evidence) and unique(evidence) and set(evidence) <= ids, 502, "Invalid model evidence")
         require(isinstance(diagnostics, list) and 1 <= len(diagnostics) <= policy["maximumDiagnostics"], 502, "Invalid diagnostic count")
         by_name = {t["name"]: t for t in catalog}

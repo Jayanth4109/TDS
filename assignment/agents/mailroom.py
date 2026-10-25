@@ -5,7 +5,7 @@ import re
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from .common import canonical, digest, get, infer, infer_decisions, inference_window, serialized, put, require, string, transaction, unique
+from .common import canonical, digest, evidence_ids, get, infer, infer_decisions, inference_window, serialized, put, require, string, transaction, unique
 from .diagnostics import emit
 
 PROFILE = "ga5-mailroom-action-gate/v2"
@@ -74,8 +74,9 @@ def validate_proposal(p, dossier):
         require(target["id"] == "mailroom" and payload["reasonCode"] == "INDIRECT_PROMPT_INJECTION", 502)
     else:
         require(payload["reasonCode"] in {"ALREADY_COMPLETED", "DUPLICATE", "INFORMATIONAL"}, 502)
-    evidence = p.get("evidence")
     lines = {line["lineId"] for source in dossier["sources"] for line in source["lines"]}
+    evidence = evidence_ids(p.get("evidence"), lines)
+    p["evidence"] = evidence
     require(isinstance(evidence, list) and evidence and all(string(x) for x in evidence) and unique(evidence) and set(evidence) <= lines, 502, "Invalid model evidence")
 
 
