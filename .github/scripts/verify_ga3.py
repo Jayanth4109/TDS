@@ -75,6 +75,10 @@ results['incident'] = 'Live diagnosis, diagnostic/effect receipt lifecycle and s
 if os.getenv('GA3_BATTERY') == '1':
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'assignment/tests'))
     from load_cases import invoices, mail, large_incident
+    # The preceding smoke calls are separate from this cold verification sequence.
+    # Let the observed per-minute provider window reset before measuring its capacity.
+    print('Waiting for provider quota window before the complete sequence', flush=True)
+    time.sleep(62)
     started = time.monotonic()
     invoice_count = 0
     for number in range(5):

@@ -74,14 +74,21 @@ def infer_decisions(instruction, items, collection, id_field, *, timeout, batch_
                 require(isinstance(decisions, list) and len(decisions) == len(missing) and all(isinstance(p, dict) and string(p.get(id_field)) for p in decisions), 502, "Invalid model batch")
                 mapped = {p[id_field]: p for p in decisions}
                 require(len(mapped) == len(missing) and set(mapped) == {x[id_field] for x in missing}, 502, "Invalid model batch identities")
+                failures = []
                 for item in missing:
                     proposal = mapped[item[id_field]]
-                    validate(proposal, item)
+                    try:
+                        validate(proposal, item)
+                    except HTTPException as error:
+                        failures.append(error)
+                        continue
                     cached[item[id_field]] = proposal
                     path = cache_path(item)
                     temp = path.with_suffix("."+str(threading.get_ident())+".tmp")
                     temp.write_text(canonical(proposal))
                     temp.replace(path)
+                if failures:
+                    raise failures[0]
             return cached
         finally:
             for lock in reversed(acquired):

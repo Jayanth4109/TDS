@@ -1,6 +1,7 @@
 """Two-phase mailroom protocol. No effect precedes an authenticated receipt."""
 import base64
 import re
+import os
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -113,7 +114,7 @@ def handle(body):
             if missing:
                 emit("mailroom_input", {"dossiers": dossiers})
                 with inference_window(db):
-                    result = infer_decisions(PROMPT, missing, "dossiers", "dossierId", timeout=48, batch_size=8, validate=validate_proposal, model_call=infer)
+                    result = infer_decisions(PROMPT, missing, "dossiers", "dossierId", timeout=48, batch_size=max(1,min(64,int(os.getenv("MAILROOM_BATCH_SIZE","64")))), validate=validate_proposal, model_call=infer)
                 decisions = result.get("decisions")
                 require(isinstance(decisions, list) and len(decisions) == len(missing), 502, "Invalid model batch")
                 require(unique([p.get("dossierId") for p in decisions]), 502)

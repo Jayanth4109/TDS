@@ -1,6 +1,7 @@
 """Durable, principal-scoped A2A invoice Tasks."""
 import uuid
 import re
+import os
 
 from .common import canonical, digest, evidence_ids, get, infer, infer_decisions, inference_window, serialized, put, require, string, transaction, unique
 from .diagnostics import emit
@@ -82,7 +83,7 @@ def send(principal, body):
             if missing:
                 emit("invoice_input", {"policyRevision": data["policyRevision"], "packages": packages})
                 with inference_window(db):
-                    result = infer_decisions(PROMPT, missing, "packages", "packageId", timeout=38, batch_size=3, validate=validate_decision, extra={"policyRevision": data["policyRevision"]}, model_call=infer)
+                    result = infer_decisions(PROMPT, missing, "packages", "packageId", timeout=38, batch_size=max(1,min(12,int(os.getenv("INVOICE_BATCH_SIZE","12")))), validate=validate_decision, extra={"policyRevision": data["policyRevision"]}, model_call=infer)
                 decisions = result.get("decisions")
                 require(isinstance(decisions, list) and len(decisions) == len(missing) and all(isinstance(p, dict) for p in decisions), 502, "Invalid model batch")
                 require(unique([p.get("packageId") for p in decisions]), 502)
