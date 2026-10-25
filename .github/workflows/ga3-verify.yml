@@ -15,11 +15,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Locate active temporary service
+        id: active
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh api 'repos/${{ github.repository }}/actions/workflows/ga3-service.yml/runs?branch=codex%2Fga3-solutions' --jq '.workflow_runs[] | select(.status == "in_progress") | .id' | head -n 1)
+          test -n "$run_id" || { echo 'No active temporary service'; exit 1; }
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           name: temporary-submission-url
           path: /tmp/ga3-deployment
-          run-id: 40207908411
+          run-id: ${{ steps.active.outputs.run_id }}
           github-token: ${{ github.token }}
       - name: Validate deployed endpoints with synthetic samples
         working-directory: assignment

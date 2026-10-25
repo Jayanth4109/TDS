@@ -2,12 +2,15 @@
 import json
 import re
 import runpy
+import sys
 import time
 import uuid
 from pathlib import Path
 
 import httpx
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'assignment'))
 
 base = Path('/tmp/ga3-deployment/tds-public-url.txt').read_text().strip()
 assert re.fullmatch(r'https://[a-z0-9-]+\.trycloudflare\.com', base)
