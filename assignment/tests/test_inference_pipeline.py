@@ -111,6 +111,16 @@ def test_display_brackets_resolve_only_to_known_ids():
     assert common.evidence_ids(['[ev_1]','ev_2','[unknown]'], {'ev_1','ev_2'}) == ['ev_1','ev_2','[unknown]']
 
 
+def test_rationale_cites_only_model_selected_source_references():
+    import test_invoice
+    proposal=test_invoice.decision()['decisions'][0]
+    proposal['evidenceRefs']=['cur_identity','cur_records','cur_decision']
+    proposal['rationale']='settle_invoice: [cur_decision] establishes that the reconciled invoice is within delegated authority.'
+    source={'documents':'[cur_identity] Vendor identity. [cur_records] Reconciled invoice. [cur_decision] Within authority.'}
+    invoice.validate_decision(proposal,source)
+    assert all(ref in proposal['rationale'] for ref in proposal['evidenceRefs'])
+
+
 def test_incident_bracketed_evidence_preserves_exact_ids(client, monkeypatch):
     import test_incident
     from agents import incident

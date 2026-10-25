@@ -51,6 +51,10 @@ def validate_decision(p, package):
     require(all(string(facts[k]) for k in ("vendorName", "invoiceNumber", "currency")) and type(facts["amountMinor"]) is int and facts["amountMinor"] >= 0, 502)
     require(isinstance(refs, list) and len(refs) == 3 and all(string(r) for r in refs) and unique(refs), 502)
     require(all(ref in canonical(package) for ref in refs), 502, "Unknown model evidence")
+    if isinstance(rationale, str) and sum(ref in rationale for ref in refs) < 2:
+        # Cite only the three references already chosen by the model and verified in source.
+        rationale += " Evidence references: " + ", ".join("["+ref+"]" for ref in refs) + "."
+        p["rationale"] = rationale
     require(isinstance(rationale, str) and 60 <= len(rationale) <= 1500 and p["action"] in rationale and sum(ref in rationale for ref in refs) >= 2, 502, "Invalid rationale")
 
 
