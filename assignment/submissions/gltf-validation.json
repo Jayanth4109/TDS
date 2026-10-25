@@ -1,0 +1,120 @@
+{
+  "uri": "nixon.glb",
+  "mimeType": "model/gltf-binary",
+  "validatorVersion": "2.0.0-dev.3.10",
+  "validatedAt": "2026-10-25T15:31:47.297Z",
+  "issues": {
+    "numErrors": 0,
+    "numWarnings": 0,
+    "numInfos": 1,
+    "numHints": 8,
+    "messages": [
+      {
+        "code": "BUFFER_VIEW_TARGET_MISSING",
+        "message": "bufferView.target should be set for vertex or index data.",
+        "severity": 3,
+        "pointer": "/meshes/0/primitives/0/attributes/POSITION"
+      },
+      {
+        "code": "BUFFER_VIEW_TARGET_MISSING",
+        "message": "bufferView.target should be set for vertex or index data.",
+        "severity": 3,
+        "pointer": "/meshes/0/primitives/0/attributes/TEXCOORD_0"
+      },
+      {
+        "code": "BUFFER_VIEW_TARGET_MISSING",
+        "message": "bufferView.target should be set for vertex or index data.",
+        "severity": 3,
+        "pointer": "/meshes/0/primitives/0/attributes/NORMAL"
+      },
+      {
+        "code": "BUFFER_VIEW_TARGET_MISSING",
+        "message": "bufferView.target should be set for vertex or index data.",
+        "severity": 3,
+        "pointer": "/meshes/0/primitives/0/indices"
+      },
+      {
+        "code": "BUFFER_VIEW_TARGET_MISSING",
+        "message": "bufferView.target should be set for vertex or index data.",
+        "severity": 3,
+        "pointer": "/meshes/1/primitives/0/attributes/POSITION"
+      },
+      {
+        "code": "BUFFER_VIEW_TARGET_MISSING",
+        "message": "bufferView.target should be set for vertex or index data.",
+        "severity": 3,
+        "pointer": "/meshes/1/primitives/0/attributes/TEXCOORD_0"
+      },
+      {
+        "code": "BUFFER_VIEW_TARGET_MISSING",
+        "message": "bufferView.target should be set for vertex or index data.",
+        "severity": 3,
+        "pointer": "/meshes/1/primitives/0/attributes/NORMAL"
+      },
+      {
+        "code": "BUFFER_VIEW_TARGET_MISSING",
+        "message": "bufferView.target should be set for vertex or index data.",
+        "severity": 3,
+        "pointer": "/meshes/1/primitives/0/indices"
+      },
+      {
+        "code": "IMAGE_NPOT_DIMENSIONS",
+        "message": "Image has non-power-of-two dimensions: 1269x1536.",
+        "severity": 2,
+        "pointer": "/images/0"
+      }
+    ],
+    "truncated": false
+  },
+  "info": {
+    "version": "2.0",
+    "generator": "https://github.com/mikedh/trimesh",
+    "extensionsUsed": [
+      "KHR_materials_unlit"
+    ],
+    "resources": [
+      {
+        "pointer": "/buffers/0",
+        "mimeType": "application/gltf-buffer",
+        "storage": "glb",
+        "byteLength": 270572
+      },
+      {
+        "pointer": "/images/0",
+        "mimeType": "image/jpeg",
+        "storage": "buffer-view",
+        "image": {
+          "width": 1269,
+          "height": 1536,
+          "format": "rgb",
+          "bits": 8
+        }
+      },
+      {
+        "pointer": "/images/1",
+        "mimeType": "image/png",
+        "storage": "buffer-view",
+        "image": {
+          "width": 64,
+          "height": 256,
+          "format": "rgb",
+          "primaries": "srgb",
+          "transfer": "srgb",
+          "bits": 8
+        }
+      }
+    ],
+    "animationCount": 0,
+    "materialCount": 2,
+    "hasMorphTargets": false,
+    "hasSkins": false,
+    "hasTextures": true,
+    "hasDefaultScene": true,
+    "drawCallCount": 2,
+    "totalVertexCount": 937,
+    "totalTriangleCount": 1798,
+    "maxUVs": 1,
+    "maxInfluences": 0,
+    "maxAttributes": 3
+  }
+}

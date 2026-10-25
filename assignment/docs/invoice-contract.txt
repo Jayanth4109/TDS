@@ -1,0 +1,214 @@
+Source: https://exam.sanand.workers.dev/tds-2026-09-ga3
+
+Your task
+
+        Receive an invoice batch through the A2A API.
+        Use AI to choose one action and cite the exact evidence for every invoice.
+        Return proposals and wait for the grader's results. A proposal alone is not permission to act.
+        Execute only accepted proposals, store the Task, and make retries safe.
+
+      A practical build order:
+
+        Make the Agent Card, authentication, version checks, media types, and route envelopes pass.
+        Persist Tasks and implement message idempotency.
+        Add one batched AI decision step and validate every typed proposal.
+        Accept result continuations only when they match the stored Task and proposal.
+        Add terminal replay, user isolation, and the cancel-versus-result race.
+
+
+        Protocol code, storage, and AI reasoning are separate layers. This makes failures easier to reproduce and keeps
+        retries from repeating model or action work.
+
+
+      1. Expose this A2A 1.0 HTTP+JSON surface
+
+        Publish the Agent Card at the origin-level discovery path below. All other paths are relative to the base URL
+        you submit, for example https://host/a2a/:
+
+      GET  {origin}/.well-known/agent-card.json
+POST {base}/message:send
+GET  {base}/tasks/{id}
+GET  {base}/tasks
+POST {base}/tasks/{id}:cancel
+
+        The submitted base URL must be public HTTPS with no credentials, query, or fragment. Do not redirect grader requests.
+        Successful A2A responses must use JSON/A2A media types and stay at or below 512 KiB.
+        The Agent Card is public. Every other route requires an exact Bearer token.
+
+          /message:send returns {"task": Task}; task reads and cancellation return a Task;
+          listing returns {"tasks": [Task, ...]}.
+
+
+          Require A2A-Version: 1.0 and application/a2a+json. Missing authentication returns
+          401/403; another version returns 400. Use ProtoJSON strings such as ROLE_USER and
+          TASK_STATE_INPUT_REQUIRED.
+
+
+          The card has nonempty name, description, version, object-valued
+          capabilities, and an invoice_action_agent skill with nonempty name, description,
+          and tags.
+
+
+          supportedInterfaces contains the exact submitted base URL with
+          {"protocolBinding":"HTTP+JSON","protocolVersion":"1.0"}.
+          defaultInputModes includes application/vnd.ga5.invoice-claim-batch+json.
+          defaultOutputModes includes both output modes below.
+
+
+
+      2. Read a batch and propose one action per package
+
+        An initial message contains a batchId, a policy revision, and invoice packages. Each core task has
+        12 packages. The documents mix useful facts with old examples, negation, and irrelevant action words. A small
+        newly generated audit batch is also tested.
+
+      {
+  "message": {
+    "messageId": "...", "role": "ROLE_USER",
+    "parts": [{
+      "mediaType": "application/vnd.ga5.invoice-claim-batch+json",
+      "data": {"batchId":"...", "policyRevision":"...", "packages":[...]}
+    }]
+  },
+  "configuration": {
+    "returnImmediately": false, "historyLength": 20,
+    "acceptedOutputModes": [
+      "application/vnd.ga5.invoice-action-proposals+json",
+      "application/vnd.ga5.invoice-action-receipts+json"
+    ]
+  }
+}
+      Choose exactly one typed action for every package:
+
+        settle_invoice: valid, reconciled, and within autonomous authority.
+        request_approval: commercially valid, but outside delegated authority.
+        hold_invoice: payment pauses until a stated verification completes.
+        reject_duplicate: the same commercial invoice was already paid.
+        open_exception: material records conflict and need an exception workflow.
+
+
+        Return a Task in TASK_STATE_INPUT_REQUIRED. It has exactly one artifact Part with media type
+        application/vnd.ga5.invoice-action-proposals+json and this data:
+
+      {
+  "batchId": "...",
+  "proposals": [{
+    "packageId": "...", "actionId": "durable unique id (at least 12 characters)",
+    "action": "one exact action above",
+    "facts": {
+      "vendorName": "...", "invoiceNumber": "...",
+      "amountMinor": 12345, "currency": "INR"
+    },
+    "evidenceRefs": ["exact decisive references from the documents"],
+    "rationale": "60–1500 characters; name the action and cite at least two evidence refs"
+  }]
+}
+
+        Package IDs and action IDs must be unique in the batch. Return exactly the three decisive bracketed references
+        from the paragraph that determines the action. Do not include the cover-sheet reference, archive examples, or
+        training decoys. Keep the initial message in Task.history. Do not return a final receipt artifact
+        yet; a proposal is not permission to act.
+
+
+      3. Use the results and finish the task
+
+        The grader checks your proposals, then sends results to the same task and context. The receipt nonces are
+        unpredictable and are not present in the initial request.
+
+      {
+  "message": {
+    "messageId": "new id", "taskId": "exact task id", "contextId": "exact context id",
+    "role": "ROLE_USER",
+    "parts": [{
+      "mediaType": "application/vnd.ga5.invoice-action-results+json",
+      "data": {"batchId":"...", "results":[{
+        "packageId":"...", "actionId":"...", "action":"...",
+        "outcome":"ACCEPTED" | "REJECTED", "receiptNonce":"unpredictable..."
+      }]}
+    }]
+  }
+}
+
+        Reject a continuation whose principal, task, context, batch, package, action ID, or action does not match.
+        The grader returns ACCEPTED only for an exact safe proposal; otherwise it returns
+        REJECTED. A valid continuation completes the task and is recorded in history. Keep the proposal
+        artifact and add exactly one application/vnd.ga5.invoice-action-receipts+json Part. Its
+        executions array contains accepted results only; rejected proposals remain in history and must not
+        be executed:
+
+      {
+  "batchId": "...",
+  "executions": [{
+    "packageId":"...", "actionId":"...", "action":"...", "receiptNonce":"...",
+    "facts":{"vendorName":"...","invoiceNumber":"...","amountMinor":12345,"currency":"INR"},
+    "evidenceRefs":["..."]
+  }]
+}
+
+        Each execution must match the stored proposal and grader receipt exactly. Do not invent a receipt, change an
+        action after approval, or complete a task before the result continuation arrives.
+
+
+      4. Store tasks safely and keep users separate
+
+
+          Deduplicate by (Bearer principal, messageId). Hash recursively key-sorted compact JSON of the
+          message only; ignore configuration. Concurrent equivalent requests, reordered JSON
+          keys, and a changed returnImmediately value must return the same complete Task without another
+          model call or action.
+
+
+          Reusing a message ID with changed semantic content returns 409 with IDEMPOTENCY_CONFLICT and
+          does not change the original. Store state before responding. Check and Save reuse the same 60 personalized
+          packages under new batch/message/task namespaces. Cache semantic package decisions by canonical package
+          content so the large core requires no repeat model work, while every verification still proves a live
+          receipt lifecycle.
+
+
+          The grader must observe INPUT_REQUIRED before it sends results, followed by
+          COMPLETED. You may use SUBMITTED and WORKING internally. A nonterminal task may be canceled. Once
+          terminal, no Task field may change. If receipt and cancel arrive together, exactly one operation returns 200
+          and the other returns 409. The final result is COMPLETED with all receipts or CANCELED with no final
+          receipt—never both.
+
+
+          Treat every Bearer token as a separate user. Read, continue, and cancel only that user's tasks. A
+          task-specific outsider request returns 403/404. An authenticated GET {base}/tasks returns only
+          that principal's tasks, so a new outsider normally receives {"tasks":[]}. Error bodies must be
+          generic: never echo another principal's task ID or reveal whether it exists.
+
+
+          One user must never read or change another user's task. A proven cross-user leak or mutation scores zero. A
+          timeout, 5xx, malformed probe response, or owner-list failure loses isolation marks but is not by itself
+          proof of a leak.
+
+
+
+      5. What is graded
+
+        Five core tasks × 12 long packages (roughly 55–65k input tokens total), plus a new hidden audit task on each Check or Save.
+        Correct action, facts, evidence, and rationale—not model metadata.
+        Agent Card, authentication, media types, lifecycle, history, typed schema, and the action gate.
+        Concurrent deduplication, conflicts, replay, action identity, the cancel/receipt race, and user isolation.
+        Blanket answers are capped. Settling a package that must be approved, held, rejected, or escalated triggers a severe cap.
+        A failed audit receipt lifecycle caps the score at 2/4; under 75% audit action accuracy caps it at 1.6/4. Any cross-principal disclosure or mutation scores zero.
+
+          Feedback shows earned/max marks, short failure codes, and a brief next check. Contract codes cover the card,
+          authentication, version, media type, and envelopes. Other codes identify decision quality, Task lifecycle,
+          replay/idempotency, receipt binding, isolation, or atomicity. They do not reveal a hidden package's answer.
+
+
+
+
+        Cost and runtime: batch 12 packages into one model call and cache each decision by canonical
+        package content rather than batch, message, or task ID. With a very small model, the first core is designed to
+        cost about one US cent or less; free-tier or local models can make it zero. Later Checks and Save reuse core package content, but each has new audit evidence.
+        Cache the stable core decisions; you must still inspect and decide the fresh audit cases. Polls, replays, lists,
+        conflicts, cancellation, and receipt continuations must make no model call. Each request has 45 seconds; the complete verification has 160 seconds, and the
+        remaining overall deadline may shorten the final request. All case files are synthetic; do not mix real
+        finance records, API keys, or deployment secrets into model prompts.
+
+
+
+        Reference:
+        A2A 1.0 specification.

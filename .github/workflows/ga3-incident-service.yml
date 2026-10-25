@@ -1,0 +1,108 @@
+name: TDS Q4 incident service
+on:
+  push:
+    branches: [codex/ga3-solutions]
+    paths: [assignment/**, .github/workflows/ga3-incident-service.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ga3-incident-temporary-service
+  cancel-in-progress: true
+
+jobs:
+  serve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 250
+    env:
+      LLM_CHAT_URL: ${{ vars.LLM_CHAT_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions' }}
+      LLM_MODEL: ${{ vars.LLM_MODEL || 'gemini-3.5-flash-lite' }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_REASONING_EFFORT: ${{ vars.LLM_REASONING_EFFORT || 'minimal' }}
+      DIAGNOSTIC_PUBLIC_KEY_FILE: ../.github/support-public-key.pem
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require an authenticated model connection
+        run: |
+          test -n "$LLM_API_KEY" || { echo 'Configure the LLM_API_KEY Actions secret. The anonymous provider cannot meet this workload.'; exit 1; }
+      - name: Install and test
+        working-directory: assignment
+        run: |
+          python -m pip install -r requirements.txt 'pytest>=8,<9'
+          python -m pytest tests -q
+      - name: Start temporary service
+        working-directory: assignment
+        env:
+          STATE_DB: /tmp/tds-state.sqlite3
+          MEDIA_DIR: submissions
+          PUBLIC_BASE_URL_FILE: /tmp/tds-public-url.txt
+          DIAGNOSTIC_PUBLIC_KEY_FILE: ../.github/support-public-key.pem
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 2 --silent --show-error \
+            https://github.com/cloudflare/cloudflared/releases/download/2026.10.3/cloudflared-linux-amd64 \
+            -o /tmp/cloudflared
+          echo '053b80b0a23031a038fdbf3c073f59f82b8f1f152aa67971d7383ffafc0dbab0  /tmp/cloudflared' | sha256sum --check
+          chmod +x /tmp/cloudflared
+          python -m uvicorn agents.app:app --host 127.0.0.1 --port 8000 --no-access-log > /tmp/tds-app.log 2>&1 &
+          app_pid=$!
+          /tmp/cloudflared tunnel --url http://127.0.0.1:8000 --protocol http2 --no-autoupdate > /tmp/tds-tunnel.log 2>&1 &
+          tunnel_pid=$!
+          trap 'kill "$app_pid" "$tunnel_pid" 2>/dev/null || true' ERR
+          for attempt in $(seq 1 60); do
+            public_url=$(sed -nE 's/.*(https:\/\/[a-z0-9-]+\.trycloudflare\.com).*/\1/p' /tmp/tds-tunnel.log | head -n 1)
+            if [ -n "$public_url" ]; then
+              printf '%s\n' "$public_url" > "$PUBLIC_BASE_URL_FILE"
+              break
+            fi
+            if ! kill -0 "$tunnel_pid" 2>/dev/null; then
+              cat /tmp/tds-tunnel.log
+              exit 1
+            fi
+            sleep 2
+          done
+          test -s "$PUBLIC_BASE_URL_FILE"
+          curl --fail --retry 8 --retry-delay 3 --retry-all-errors --silent --show-error "$public_url/healthz"
+          echo "::notice title=Temporary submission URL::$public_url"
+          {
+            echo 'Temporary service: stops after four hours, cancellation, or a new deployment.'
+            echo ''
+            echo "Q4: $public_url"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate grader-sized live workloads before publishing URLs
+        working-directory: assignment
+        env:
+          GA3_PUBLIC_URL_FILE: /tmp/tds-public-url.txt
+          GA3_LOAD_TARGETS: incident
+        run: python -u ../.github/scripts/load_ga3.py
+      - name: Preserve validation results and encrypted diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scale-validation-and-encrypted-support
+          path: |
+            /tmp/ga3-load-validation.json
+            /tmp/tds-diagnostics/*.json
+          retention-days: 1
+      - name: Publish temporary URL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: incident-submission-url
+          path: /tmp/tds-public-url.txt
+          retention-days: 1
+      - name: Keep service alive for up to four hours
+        working-directory: assignment
+        run: |
+          python -u - <<'PY'
+          import os,time,urllib.request
+          end=time.monotonic()+4*60*60
+          while time.monotonic()<end:
+              with urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=5) as r:
+                  assert r.status==200
+              time.sleep(30)
+          PY
