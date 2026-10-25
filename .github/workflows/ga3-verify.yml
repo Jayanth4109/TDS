@@ -31,6 +31,8 @@ jobs:
           github-token: ${{ github.token }}
       - name: Validate deployed endpoints with synthetic samples
         working-directory: assignment
+        env:
+          GA3_BATTERY: '1'
         run: |
           python -m pip install -r requirements.txt 'pytest>=8,<9'
           python ../.github/scripts/verify_ga3.py

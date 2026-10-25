@@ -3,6 +3,7 @@ import json
 import re
 import runpy
 import sys
+import os
 import time
 import uuid
 from pathlib import Path
@@ -70,5 +71,65 @@ while state['status'] == 'waiting' and step < 5:
 assert state['status'] == 'completed'
 assert client.get('/v2/incidents/'+run_id).json() == state
 results['incident'] = 'Live diagnosis, diagnostic/effect receipt lifecycle and stored state passed'
+
+if os.getenv('GA3_BATTERY') == '1':
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'assignment/tests'))
+    from load_cases import invoices, mail, large_incident
+    started = time.monotonic()
+    invoice_count = 0
+    for number in range(5):
+        body, expected = invoices('battery-'+suffix+'-'+str(number))
+        response = client.post('/a2a/message:send', json=body, headers=headers)
+        assert response.status_code == 200, ('invoice battery', number, response.status_code, response.text[:150])
+        task = response.json()['task']
+        batch = task['artifacts'][0]['parts'][0]['data']
+        assert all(expected[p['packageId']] == p['action'] for p in batch['proposals'])
+        receipts = [{**{k:p[k] for k in ('packageId','actionId','action')}, 'outcome':'ACCEPTED', 'receiptNonce':uuid.uuid4().hex} for p in batch['proposals']]
+        response = client.post('/a2a/message:send', headers=headers, json={'message':{'messageId':uuid.uuid4().hex,'taskId':task['id'],'contextId':task['contextId'],'role':'ROLE_USER','parts':[{'mediaType':'application/vnd.ga5.invoice-action-results+json','data':{'batchId':batch['batchId'],'results':receipts}}]}})
+        assert response.status_code == 200 and response.json()['task']['status']['state']=='TASK_STATE_COMPLETED'
+        invoice_count += len(receipts)
+    results['invoice_battery'] = {'correctActions':invoice_count, 'completedBatches':5, 'seconds':round(time.monotonic()-started,2)}
+    print('invoice battery passed:', results['invoice_battery'], flush=True)
+    first_body, first_expected, _ = mail('battery-'+suffix+'-mail-first')
+    started = time.monotonic()
+    for number in range(2):
+        body, expected, private = mail('battery-'+suffix+'-mail-'+str(number))
+        if number:
+            body['dossiers'][:58] = first_body['dossiers'][:58]
+            expected.update(first_expected)
+        else:
+            first_body, first_expected = body, expected
+        response = client.post('/v1/mailroom/actions', json=body)
+        assert response.status_code == 200, ('mailroom battery',number,response.status_code,response.text[:150])
+        proposed = response.json()
+        assert len(proposed['proposals'])==64 and all(expected[p['dossierId']]==p['action'] for p in proposed['proposals'])
+        from agents.mailroom import proposal_digest
+        from agents.common import canonical
+        import base64
+        receipts=[]
+        for proposal in proposed['proposals']:
+            receipt={k:proposal[k] for k in ('dossierId','callId','action')}
+            receipt.update(accepted=True,proposalDigest=proposal_digest(proposal),receiptId=uuid.uuid4().hex)
+            signed={'profile':body['profile'],'evaluationId':body['evaluationId'],'inputDigest':proposed['inputDigest'],'receipt':receipt}
+            receipt['receiptSignature']=base64.b64encode(private.sign(canonical(signed).encode())).decode()
+            receipts.append(receipt)
+        response=client.post('/v1/mailroom/actions',json={'profile':body['profile'],'operation':'commit','evaluationId':body['evaluationId'],'inputDigest':proposed['inputDigest'],'receipts':receipts})
+        assert response.status_code==200 and response.json()['status']=='completed'
+    results['mailroom_battery']={'evaluations':2,'correctActions':128,'uniqueDossiers':70,'seconds':round(time.monotonic()-started,2)}
+    print('mailroom battery passed:',results['mailroom_battery'],flush=True)
+    started=time.monotonic()
+    for number in range(7):
+        rid='battery-'+suffix+'-incident-'+str(number)
+        response=client.post('/v2/incidents',json=large_incident(rid))
+        assert response.status_code==200,('incident battery',number,response.status_code,response.text[:150])
+        state=response.json()
+        step=0
+        while state['status']=='waiting' and step<4:
+            response=client.post('/v2/incidents/'+rid+'/receipts',json={'receiptId':uuid.uuid4().hex,'outcomes':[incident['outcome'](d) for d in state['dispatches']]})
+            assert response.status_code==200
+            state=response.json();step+=1
+        assert state['status']=='completed'
+    results['incident_battery']={'completedRuns':7,'seconds':round(time.monotonic()-started,2)}
+    print('incident battery passed:',results['incident_battery'],flush=True)
 Path('/tmp/ga3-public-validation.json').write_text(json.dumps(results, indent=2)+'\n')
 print(json.dumps(results, indent=2))
