@@ -16,11 +16,20 @@ jobs:
   serve:
     runs-on: ubuntu-latest
     timeout-minutes: 250
+    env:
+      LLM_CHAT_URL: ${{ vars.LLM_CHAT_URL || 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions' }}
+      LLM_MODEL: ${{ vars.LLM_MODEL || 'gemini-3.5-flash-lite' }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_REASONING_EFFORT: ${{ vars.LLM_REASONING_EFFORT || 'minimal' }}
+      DIAGNOSTIC_PUBLIC_KEY_FILE: ../.github/support-public-key.pem
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Require an authenticated model connection
+        run: |
+          test -n "$LLM_API_KEY" || { echo 'Configure the LLM_API_KEY Actions secret. The anonymous provider cannot meet this workload.'; exit 1; }
       - name: Install and test
         working-directory: assignment
         run: |
@@ -29,12 +38,10 @@ jobs:
       - name: Start temporary service
         working-directory: assignment
         env:
-          LLM_CHAT_URL: https://text.pollinations.ai/openai
-          LLM_MODEL: openai-fast
-          LLM_REASONING_EFFORT: low
           STATE_DB: /tmp/tds-state.sqlite3
           MEDIA_DIR: submissions
           PUBLIC_BASE_URL_FILE: /tmp/tds-public-url.txt
+          DIAGNOSTIC_PUBLIC_KEY_FILE: ../.github/support-public-key.pem
         run: |
           set -euo pipefail
           curl --fail --location --retry 2 --silent --show-error \
@@ -69,6 +76,20 @@ jobs:
             echo "Q3: $public_url/v1/mailroom/actions"
             echo "Q4: $public_url"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Validate grader-sized live workloads before publishing URLs
+        working-directory: assignment
+        env:
+          GA3_PUBLIC_URL_FILE: /tmp/tds-public-url.txt
+        run: python -u ../.github/scripts/load_ga3.py
+      - name: Preserve validation results and encrypted diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scale-validation-and-encrypted-support
+          path: |
+            /tmp/ga3-load-validation.json
+            /tmp/tds-diagnostics/*.json
+          retention-days: 1
       - name: Publish temporary URL artifact
         uses: actions/upload-artifact@v4
         with:

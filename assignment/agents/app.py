@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from . import incident, invoice, mailroom
 from .common import canonical, digest, require
+from . import diagnostics
 
 app = FastAPI(title="TDS assignment agents", redirect_slashes=False, docs_url=None, redoc_url=None)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "HEAD", "OPTIONS"], allow_headers=["*"])
@@ -71,6 +72,20 @@ def principal(request: Request):
 @app.get("/healthz")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/support/events")
+def support_events():
+    require(bool(os.getenv("DIAGNOSTIC_PUBLIC_KEY_FILE")), 404, "Not found")
+    return {"files": [p.name for p in sorted(diagnostics.directory().glob("*.json"))]}
+
+
+@app.get("/support/events/{name}")
+def support_event(name: str):
+    require(bool(os.getenv("DIAGNOSTIC_PUBLIC_KEY_FILE")) and bool(re.fullmatch(r"[0-9]+-[a-f0-9]{32}\.json", name)), 404, "Not found")
+    path = diagnostics.directory()/name
+    require(path.is_file(), 404, "Not found")
+    return FileResponse(path, media_type="application/json")
 
 
 @app.get("/.well-known/agent-card.json")

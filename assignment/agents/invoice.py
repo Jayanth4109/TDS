@@ -1,7 +1,8 @@
 """Durable, principal-scoped A2A invoice Tasks."""
 import uuid
 
-from .common import canonical, digest, get, infer, put, require, string, transaction, unique
+from .common import canonical, digest, get, infer, infer_decisions, inference_window, serialized, put, require, string, transaction, unique
+from .diagnostics import emit
 
 PREFIX = "application/vnd.ga5.invoice-"
 BATCH, PROPOSALS, RESULTS, RECEIPTS = [PREFIX + x + "+json" for x in ("claim-batch", "action-proposals", "action-results", "action-receipts")]
@@ -14,7 +15,7 @@ reject_duplicate (SAME commercial invoice already paid), or open_exception (mate
 Do not treat payment of a different invoice as a duplicate. Respect negation, current records and approval limits.
 Choose exactly the THREE decisive bracketed references in the paragraph that establishes the action; exclude cover-sheet,
 historical examples, training examples, action-word decoys and archives. Preserve exact reference strings.
-Use current invoice identity, amount in minor units, and currency. Rationale must be 60–1500 characters, name the selected
+Use current invoice identity, amount in minor units, and currency. Rationale must be a concise 60–250 characters, name the selected
 action and explicitly cite at least two selected references. Do not infer permission from a proposal or settle an uncertain invoice."""
 
 
@@ -35,6 +36,16 @@ def owned(db, principal, tid):
     return task
 
 
+def validate_decision(p, package):
+    facts, refs, rationale = p.get("facts"), p.get("evidenceRefs"), p.get("rationale")
+    require(isinstance(p.get("action"), str) and p["action"] in ACTIONS and isinstance(facts, dict) and set(facts) == {"vendorName", "invoiceNumber", "amountMinor", "currency"}, 502, "Invalid model decision")
+    require(all(string(facts[k]) for k in ("vendorName", "invoiceNumber", "currency")) and type(facts["amountMinor"]) is int and facts["amountMinor"] >= 0, 502)
+    require(isinstance(refs, list) and len(refs) == 3 and all(string(r) for r in refs) and unique(refs), 502)
+    require(all(ref in canonical(package) for ref in refs), 502, "Unknown model evidence")
+    require(isinstance(rationale, str) and 60 <= len(rationale) <= 1500 and p["action"] in rationale and sum(ref in rationale for ref in refs) >= 2, 502, "Invalid rationale")
+
+
+@serialized("invoice-message", lambda principal, body: digest([principal, body["message"].get("messageId") if isinstance(body.get("message"), dict) else body]))
 def send(principal, body):
     message = body.get("message")
     require(isinstance(message, dict) and string(message.get("messageId")) and message.get("role") == "ROLE_USER")
@@ -61,20 +72,16 @@ def send(principal, body):
                 return digest({"policyRevision": data["policyRevision"], "package": p})
             missing = [p for p in packages if not get(db, "invoice-decisions", cache_key(p))]
             if missing:
-                result, _ = infer(PROMPT, {"policyRevision": data["policyRevision"], "packages": missing}, timeout=38)
+                emit("invoice_input", {"policyRevision": data["policyRevision"], "packages": packages})
+                with inference_window(db):
+                    result = infer_decisions(PROMPT, missing, "packages", "packageId", timeout=38, batch_size=3, validate=validate_decision, extra={"policyRevision": data["policyRevision"]}, model_call=infer)
                 decisions = result.get("decisions")
                 require(isinstance(decisions, list) and len(decisions) == len(missing) and all(isinstance(p, dict) for p in decisions), 502, "Invalid model batch")
                 require(unique([p.get("packageId") for p in decisions]), 502)
                 by_id = {p.get("packageId"): p for p in decisions}
                 for package in missing:
                     p = by_id.get(package["packageId"], {})
-                    facts, refs, rationale = p.get("facts"), p.get("evidenceRefs"), p.get("rationale")
-                    require(p.get("action") in ACTIONS and isinstance(facts, dict) and set(facts) == {"vendorName", "invoiceNumber", "amountMinor", "currency"}, 502, "Invalid model decision")
-                    require(all(string(facts[k]) for k in ("vendorName", "invoiceNumber", "currency")) and type(facts["amountMinor"]) is int and facts["amountMinor"] >= 0, 502)
-                    require(isinstance(refs, list) and len(refs) == 3 and all(string(r) for r in refs) and unique(refs), 502)
-                    source_text = canonical(package)
-                    require(all(ref in source_text for ref in refs), 502, "Unknown model evidence")
-                    require(isinstance(rationale, str) and 60 <= len(rationale) <= 1500 and p["action"] in rationale and sum(ref in rationale for ref in refs) >= 2, 502, "Invalid rationale")
+                    validate_decision(p, package)
                     put(db, "invoice-decisions", cache_key(package), {k: p[k] for k in ("action", "facts", "evidenceRefs", "rationale")})
             proposals = [{"packageId": p["packageId"], "actionId": str(uuid.uuid4()), **get(db, "invoice-decisions", cache_key(p))} for p in packages]
             task = {"id": str(uuid.uuid4()), "contextId": message.get("contextId") or str(uuid.uuid4()),

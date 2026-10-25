@@ -9,13 +9,32 @@ The protocol implementations have automated tests for validation, durable replay
 deduplication, user isolation, cancel/result races, Ed25519 receipts, retries, approval gates,
 and OTLP correlation. Tests inject controlled model outputs to exercise protocol behavior.
 They do **not** prove decision accuracy on personalized or hidden grader cases.
-Live inference smoke tests are separate. No exam Check or Save has been submitted by this code.
+The initial deployment failed real grader requests with HTTP 503. Its anonymous provider
+enforces one reply every 30 seconds per IP. Small smoke requests did not expose that limit
+or validate the full workloads. The revised pipeline is not ready until its authenticated
+model connection and full-sized live validation pass. No exam Check or Save is submitted
+automatically by this code.
 
-Anonymous Pollinations `openai-fast` inference is the default deployment option. It needs no
-API key, but has no guaranteed capacity or latency. A small local Qwen2.5-3B model was tested;
-it was too slow and produced invalid evidence, so it is not used in the deployment.
-The model connection can be replaced without changing protocol or persistence code.
+The deployment now requires the repository Actions secret `LLM_API_KEY`. Its default backend
+is Gemini 3.5 Flash-Lite through Google's OpenAI-compatible API. Obtain a key through
+<https://aistudio.google.com/app/apikey> and enter it at
+<https://github.com/Jayanth4109/TDS/settings/secrets/actions>. Do not put the key in chat,
+source files, prompts or command arguments. Alternative OpenAI-compatible providers can be
+selected with repository variables `LLM_CHAT_URL` and `LLM_MODEL` and a matching API key.
+An HTTP 200 alone is insufficient: the provider must return a valid completion envelope.
 
+The revised pipeline processes bounded groups in parallel, preserves validated partial results
+if another group fails, and releases database write locks while waiting for inference. Per-ID
+locks preserve concurrent replay guarantees. Upstream authentication, quota, input and timeout
+failures have distinct error codes. An optional RSA/AES-encrypted diagnostic channel retains
+synthetic cases and upstream errors for private troubleshooting; the decryption key is outside
+the repository and is never uploaded to Actions artifacts.
+
+A small local Qwen2.5-3B model was tested; it was too slow and produced invalid evidence.
+
+The workflow requires an authenticated key and passes full-sized live workloads (12 invoices,
+64 varied mailroom dossiers, and a long incident transcript) within the grader deadlines before
+publishing the deployment artifact. This is still separate from the personalized grader.
 The temporary GitHub Actions service lasts at most four hours after startup. A new deployment
 changes its public URL and database. Keep the same run alive through Check and Save. This is
 not permanent application hosting. Media files committed under `submissions/` have independent,
@@ -37,9 +56,10 @@ cd /workspace/TDS/assignment
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt 'pytest>=8,<9'
 .venv/bin/python -m pytest tests -q
-export LLM_CHAT_URL=https://text.pollinations.ai/openai
-export LLM_MODEL=openai-fast
-export LLM_REASONING_EFFORT=low
+export LLM_CHAT_URL=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+export LLM_MODEL=gemini-3.5-flash-lite
+export LLM_REASONING_EFFORT=minimal
+# Inject LLM_API_KEY through a secure environment binding before starting the server.
 export STATE_DB=/workspace/tds-assignment/runtime/state.sqlite3
 export MEDIA_DIR=/workspace/TDS/assignment/submissions
 .venv/bin/python -m uvicorn agents.app:app --host 0.0.0.0 --port 8000 --no-access-log

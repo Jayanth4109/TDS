@@ -5,7 +5,8 @@ import re
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from .common import canonical, digest, get, infer, put, require, string, transaction, unique
+from .common import canonical, digest, get, infer, infer_decisions, inference_window, serialized, put, require, string, transaction, unique
+from .diagnostics import emit
 
 PROFILE = "ga5-mailroom-action-gate/v2"
 TYPES = {
@@ -71,6 +72,7 @@ def validate_proposal(p, dossier):
     require(isinstance(evidence, list) and evidence and all(string(x) for x in evidence) and unique(evidence) and set(evidence) <= lines, 502, "Invalid model evidence")
 
 
+@serialized("mail-evaluation", lambda body: canonical(body.get("evaluationId")))
 def handle(body):
     require(body.get("profile") == PROFILE and string(body.get("operation")) and body["operation"] in {"propose", "commit"} and string(body.get("evaluationId")))
     eid = body["evaluationId"]
@@ -101,7 +103,9 @@ def handle(body):
             require(unique([d["dossierId"] for d in dossiers]))
             missing = [d for d in dossiers if not get(db, "mail-decisions", digest(d))]
             if missing:
-                result, _ = infer(PROMPT, {"dossiers": missing}, timeout=48)
+                emit("mailroom_input", {"dossiers": dossiers})
+                with inference_window(db):
+                    result = infer_decisions(PROMPT, missing, "dossiers", "dossierId", timeout=48, batch_size=8, validate=validate_proposal, model_call=infer)
                 decisions = result.get("decisions")
                 require(isinstance(decisions, list) and len(decisions) == len(missing), 502, "Invalid model batch")
                 require(unique([p.get("dossierId") for p in decisions]), 502)

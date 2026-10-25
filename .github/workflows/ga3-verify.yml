@@ -34,6 +34,16 @@ jobs:
         run: |
           python -m pip install -r requirements.txt 'pytest>=8,<9'
           python ../.github/scripts/verify_ga3.py
+      - name: Collect encrypted support packets
+        if: always()
+        working-directory: assignment
+        run: python ../.github/scripts/collect_ga3.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: encrypted-support-packets
+          path: /tmp/ga3-encrypted-support/*.json
+          retention-days: 1
       - uses: actions/upload-artifact@v4
         with:
           name: public-validation-results
