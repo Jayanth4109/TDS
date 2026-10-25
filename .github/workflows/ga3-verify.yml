@@ -6,6 +6,9 @@ on:
 permissions:
   contents: read
   actions: read
+concurrency:
+  group: ga3-public-verification
+  cancel-in-progress: true
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -20,9 +23,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          run_id=$(gh api 'repos/${{ github.repository }}/actions/workflows/ga3-service.yml/runs?branch=codex%2Fga3-solutions' --jq '.workflow_runs[] | select(.status == "in_progress") | .id' | head -n 1)
-          test -n "$run_id" || { echo 'No active temporary service'; exit 1; }
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          for attempt in $(seq 1 24); do
+            run_id=$(gh api 'repos/${{ github.repository }}/actions/workflows/ga3-service.yml/runs?branch=codex%2Fga3-solutions' --jq '.workflow_runs[] | select(.status == "in_progress") | .id' | head -n 1)
+            if [ -n "$run_id" ]; then
+              artifact_id=$(gh api "repos/${{ github.repository }}/actions/runs/$run_id/artifacts" --jq '.artifacts[] | select(.name == "temporary-submission-url") | .id')
+              if [ -n "$artifact_id" ]; then
+                echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo 'No validated temporary service was published'
+          exit 1
       - uses: actions/download-artifact@v4
         with:
           name: temporary-submission-url
